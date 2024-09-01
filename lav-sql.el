@@ -18,15 +18,7 @@
 ;;  Description
 ;;
 ;;; Code:
-;; minor mode on sql
-;; execute aws command
-;;
-(require 'compile)
-
-(define-compilation-mode lav-sql-compilation-mode "Lav SQL"
-  "Lav SQL compilation mode."
-  (progn
-    (set (make-local-variable 'lav-sql-dummy-var) t)))
+(require 'async)
 
 (defun lav-sql-generate-command (sql)
   (concat "aws redshift-data execute-statement \
@@ -34,22 +26,42 @@
             --database y \
             --sql \"" sql "\""))
 
-
-(defun lav-sql-run (sql)
-  (save-some-buffers (not compilation-ask-about-save)
-                     (when (boundp 'compilation-save-buffers-predicate)
-                       compilation-save-buffers-predicate))
-  (let ((command-to-run (lav-sql-generate-command sql)))
-    (with-current-buffer (get-buffer-create "*lav-sql*")
-      ;(setq default-directory root-dir)
-      (compilation-start command-to-run 'lav-sql-compilation-mode))))
-
+(defun lav-sql-execute-async (sql)
+  (let* ((stdout (get-buffer-create "*aws-redshift-data-stdout*"))
+         (stderr (get-buffer-create "*aws-redshift-data-stderr*"))
+         (process (make-process :name "cmd-process"
+                                :command '(
+                                           "aws"
+                                           "redshift-data"
+                                           "execute-statement"
+                                           "--cluster-identifier"
+                                           "onefootball-dwh"
+                                           "--database"
+                                           "onefootball"
+                                           "--sql"
+                                           "select 1"
+                                           )
+                                :buffer stdout
+                                :stderr stderr))
+         (stderr-process (get-buffer-process stderr)))
+    (unless (and process stderr-process)
+      (error "Process unexpectedly nil"))
+    (message "Starting sql execution...")
+    (set-process-sentinel process
+                          (lambda (process event)
+                            (message "Process %s %s. Check out the *aws-redshift-data-stderr* buffer." process event)))
+    ;; (let ((exit-code (process-exit-status process)))
+    ;;   (if (not (eq exit-code 0))
+    ;;       (error "Process failed with exit code - %d" exit-code)
+    ;;     (message "Starting sql execution...done")))
+    )
+  )
 
 ;;;###autoload
 (defun lav-sql-execute ()
   "Execute SQL."
   (interactive)
-  (lav-sql-run "select 1"))
+  (lav-sql-execute-async "select 1"))
 
 
 (provide 'lav-sql)
